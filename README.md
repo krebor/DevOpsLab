@@ -1,16 +1,16 @@
-[Introduction](https://github.com/krebor/DevOpsLab/edit/main/README.md#introduction) <br />
+[Introduction](https://github.com/krebor/DevOpsLab/#introduction) <br />
 
-[Assignment](https://github.com/krebor/DevOpsLab/edit/main/README.md#assignment) <br />
+[Assignment](https://github.com/krebor/DevOpsLab/#assignment) <br />
 
-[Topology](https://github.com/krebor/DevOpsLab/edit/main/README.md#topology) <br />
+[Topology](https://github.com/krebor/DevOpsLab/#topology) <br />
 
-[Configuration](https://github.com/krebor/DevOpsLab/edit/main/README.md#configuration) <br />
+[Configuration](https://github.com/krebor/DevOpsLab/#configuration) <br />
 
-  - [TeamCity](https://github.com/krebor/DevOpsLab/edit/main/README.md#teamcity) <br />
-  - [Ansible](https://github.com/krebor/DevOpsLab/edit/main/README.md#ansible) <br />
-  - [Docker](https://github.com/krebor/DevOpsLab/edit/main/README.md#docker) <br />
+  - [TeamCity](https://github.com/krebor/DevOpsLab/#teamcity) <br />
+  - [Ansible](https://github.com/krebor/DevOpsLab/#ansible) <br />
+  - [Docker](https://github.com/krebor/DevOpsLab/#docker) <br />
 
-[Final Overview](https://github.com/krebor/DevOpsLab/edit/main/README.md#final-overview) <br />
+[Final Overview](https://github.com/krebor/DevOpsLab/#final-overview) <br />
 
 ## Introduction
 
