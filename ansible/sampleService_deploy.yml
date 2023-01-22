@@ -1,0 +1,15 @@
+---
+
+- hosts: all
+  become: true
+  tasks:
+  
+  - name: transfer file
+    copy:
+      src: /home/krebor/ansible_tutorial/archive.tar
+      dest: /root/sample_folder
+
+  - name: unarchive file
+    unarchive:
+      src: /home/krebor/ansible_tutorial/archive.tar
+      dest: /root/sample_folder

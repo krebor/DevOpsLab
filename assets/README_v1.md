@@ -16,15 +16,13 @@
 
 **DISCLAIMER: This project is Work In Progress and is subject to change.**
 
-*Note: Original version of this lab contained two Windows VM's (TeamCity and Client) and one Linux (Ansible). Revised version of the lab is comprised of two Linux machines (Ansible and Client) and one Windows (TeamCity).*
-
 This practice lab was designed with the goal of showcasing and teaching basic DevOps principles and technologies. 
 
-This lab involves creating three virtual machines - one Windows machine and two Linux machines. Virtualization software used in this lab is Oracle VirtualBox and the recommended system requirements are at least 16 GB of RAM, quad core processor and 100 GB of hard disk space. Lower specs could be used if using Windows Server images for Windows machine. Better specs are always welcome. Configuration of VM's in VirtualBox won't be covered in this lab, but more detail can be found [here](https://www.virtualbox.org/manual/).
+This lab involves creating three virtual machines - two Windows machines and one Linux machine. Virtualization software used in this lab is Oracle VirtualBox and the recommended system requirements are at least 16 GB of RAM, quad core processor and 100 GB of hard disk space. Lower specs could be used if using Windows Server images for Windows machines. Better specs are always welcome. Configuration of VM's in VirtualBox won't be covered in this lab, but more detail can be found [here](https://www.virtualbox.org/manual/).
 
 ## Assignment
 
-Set up TeamCity on the Windows VM and Ansible/AWX on a Linux VM. Afterwards, create a configuration which will allow an automatic build of sample Windows service on TeamCity server from GitHub source, then deploy the build over Ansible server to the third (Linux/Client) virtual machine. Two administrator accounts need to be created on the client VM, and the deployed service needs to be executed in isolation under their respective accounts (simulating two destination servers). To recap:
+Set up TeamCity on the first Windows VM and Ansible/AWX on your Linux VM. Afterwards, create a configuration which will allow an automatic build of sample Windows service on TeamCity server from GitHub source, then deploy the build over Ansible server to the third (Windows/Client) virtual machine. Two administrator accounts need to be created on the client VM, and the deployed service needs to be executed in isolation under their respective accounts (simulating two destination servers). To recap:
 
 1. Connect TeamCity to GitHub repository and perform build through TeamCity
 2. Connect TeamCity to Ansible
@@ -36,7 +34,7 @@ https://github.com/MonoSoftware/sample-windows-service
 
 ## Topology
 
-<img src="/assets/devopslab_topology_revised.png" width="300">
+<img src="/assets/devopslab_topology.png" width="300">
 
 VM01 - Teamcity <br />
 VM02 - Ansible <br />
@@ -95,48 +93,13 @@ Great news, the artifacts archive was successfully transfered to the Ansible ser
 
 **-- NEXT ENTRIES ARE WORK IN PROGRESS AND DO NOT OFFER A COMPLETE SOLUTION --**
 
-Last piece of configuration which we need to perform on the TeamCity server is to configure an SSH Exec build step in our **Deploy** build configuration, which will execute the Ansible Playbook, which will enable further deployment to the Client machine. This could also be achieved by creating a separate third build configuration within TeamCity.
+Last piece of configuration which we need to perform on the TeamCity server is to configure an SSH Exec build step in our **Deploy** build configuration, which will execute the required bash script and/or Ansible commands, which will enable further deployment to the Client machine.
 
 ### Ansible
 
-Now that we have the build artifacts, we need to create an Ansible Playbook which will perform the transfer of the archive to the Client machine, unarchiving of the file and running relevant Docker commands on the Client machine (`docker build`, `docker run`), which will leverage a pre-configured Dockerfile The required configuration can be created and tested on the Ansible Linux machine, then implemented within TeamCity SSH Exec build step.
+Now that we have the build artifacts, we need to create an Ansible ad-hoc command list or Playbook which will perform the transfer of the archive to the Client machine, unarchiving of the file, installation and running of the Windows service within two separate Docker containers under two separate Administrator accounts. The required configuration can be created and tested on the Ansible Linux machine, then implemented within TeamCity SSH Exec build step. This would utilize relevant Windows and Docker Ansible modules.
 
-We can start our configuration by installing Ansible - this can be done by using the `pip` Python package installer, or your Linux distribution's native package manager. Recommended way is using `pip`, since this method will provide the latest packages.
-
-After installing Ansible, it's time to configure our Inventory file - here we will define all client machines which Ansible will administer. Make sure to create the file within the same directory where your Playbooks and configuration files will be stored. The syntax of the file is simple, which is a list of IP addresses and/or hostnames of the machines you wish to be managed by Ansible.
-
-Next it's time to create an Ansible configuration file. Here we will define global Ansible settings which will enable us to shorten our Ansible commands and make overall quality of life improvements. Name the file **Ansible.cfg** and populate it as needed. Example:
-
-```
-[defaults]
-inventory = inventory
-private_key_file = ~/.ssh/id_rsa
-remote_user = root
-```
-This simple file outlines the structure of the file and some basic settings we can configure. In this case we defined which file will be used as an Inventory file (file we created earlier and named "**Inventory**"),  specified the location of a relevant SSH private key file and configured a default user when connecting to remote hosts (in this case **root**).
-
-Finally, we have to configure a Playbook, which is a YAML file containing the necessary tasks we want to be performed. An example YAML file:
-
-```
----
-
-- hosts: all
-  become: true
-  tasks:
-  
-  - name: transfer file
-    copy:
-      src: /home/krebor/ansible_tutorial/archive.tar
-      dest: /root/sample_folder
-
-  - name: unarchive file
-    unarchive:
-      src: /home/krebor/ansible_tutorial/archive.tar
-      dest: /root/sample_folder
-```
 ### Docker
-
-Reference material: https://learn.microsoft.com/en-us/dotnet/core/docker/build-container
 
 Docker Desktop has to be installed and started on the Client Windows machine. The relevant Docker image for Windows has to pulled - proposal in this case is to use **windows/servercore** Docker image. Administrator accounts should be created, Dockerfile configured for Windows Service deployment, and the two containers should be initialized by the Ansible Playbook/ad-hoc command list.
 
