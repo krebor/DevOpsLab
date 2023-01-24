@@ -13,3 +13,20 @@
     unarchive:
       src: /home/krebor/ansible_tutorial/archive.tar
       dest: /root/sample_folder
+      
+  - name: build image
+    community.docker.docker_image:
+      build:
+        path: ./WindowsService
+      name: windows_service
+      source: build
+      
+  - name: run container
+        docker_container:
+          name: windows_service_container
+          image: windows_service:latest
+          state: started
+          recreate: yes
+          detach: true
+          ports:
+            - "8888:8080"
