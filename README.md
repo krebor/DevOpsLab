@@ -16,15 +16,13 @@
 
 **DISCLAIMER: This project is Work In Progress and is subject to change.**
 
-*Note: Original version of this lab contained two Windows VM's (TeamCity and Client) and one Linux (Ansible). Revised version of the lab is comprised of two Linux machines (Ansible and Client) and one Windows (TeamCity).*
-
 This practice lab was designed with the goal of showcasing and teaching basic DevOps principles and technologies. 
 
-This lab involves creating three virtual machines - one Windows machine and two Linux machines. Virtualization software used in this lab is Oracle VirtualBox and the recommended system requirements are at least 16 GB of RAM, quad core processor and 100 GB of hard disk space. Lower specs could be used if using Windows Server images for Windows machine. Better specs are always welcome. Configuration of VM's in VirtualBox won't be covered in this lab, but more detail can be found [here](https://www.virtualbox.org/manual/).
+This lab involves creating three virtual machines - two Windows machines and one Linux machine. Virtualization software used in this lab is Oracle VirtualBox and the recommended system requirements are at least 16 GB of RAM, quad core processor and 100 GB of hard disk space. Lower specs could be used if using Windows Server images for Windows machines. Better specs are always welcome. Configuration of VM's in VirtualBox won't be covered in this lab, but more detail can be found [here](https://www.virtualbox.org/manual/).
 
 ## Assignment
 
-Set up TeamCity on the Windows VM and Ansible/AWX on a Linux VM. Afterwards, create a configuration which will allow an automatic build of sample Windows service on TeamCity server from GitHub source, then deploy the build over Ansible server to the third (Linux/Client) virtual machine. Two administrator accounts need to be created on the client VM, and the deployed service needs to be executed in isolation under their respective accounts (simulating two destination servers). To recap:
+Set up TeamCity on the first Windows VM and Ansible/AWX on your Linux VM. Afterwards, create a configuration which will allow an automatic build of sample Windows service on TeamCity server from GitHub source, then deploy the build over Ansible server to the third (Windows/Client) virtual machine. Two administrator accounts need to be created on the client VM, and the deployed service needs to be executed in isolation under their respective accounts (simulating two destination servers). To recap:
 
 1. Connect TeamCity to GitHub repository and perform build through TeamCity
 2. Connect TeamCity to Ansible
@@ -36,7 +34,7 @@ https://github.com/MonoSoftware/sample-windows-service
 
 ## Topology
 
-<img src="/assets/devops_topology_revised.png" width="300">
+<img src="/assets/devopslab_topology.png" width="300">
 
 VM01 - Teamcity <br />
 VM02 - Ansible <br />
@@ -95,7 +93,7 @@ Great news, the artifacts archive was successfully transfered to the Ansible ser
 
 **-- NEXT ENTRIES ARE WORK IN PROGRESS AND DO NOT OFFER A COMPLETE SOLUTION --**
 
-Last piece of configuration which we need to perform on the TeamCity server is to configure an SSH Exec build step in our **Deploy** build configuration, which will execute the Ansible Playbook, which will enable further deployment to the Client machine. This could also be achieved by creating a separate third build configuration within TeamCity.
+Last piece of configuration which we need to perform on the TeamCity server is to configure an SSH Exec build step in our **Deploy** build configuration, which will execute the required bash script and/or Ansible commands, which will enable further deployment to the Client machine.
 
 ### Ansible
 
@@ -133,12 +131,47 @@ Finally, we have to configure a Playbook, which is a YAML file containing the ne
     unarchive:
       src: /home/krebor/ansible_tutorial/archive.tar
       dest: /root/sample_folder
+      
+  - name: build image
+    community.docker.docker_image:
+      build:
+        path: ./WindowsService
+      name: windows_service
+      source: build
+      
+  - name: run container
+        docker_container:
+          name: windows_service_container
+          image: windows_service:latest
+          state: started
+          recreate: yes
+          detach: true
+          ports:
+            - "8888:8080"
 ```
 ### Docker
 
 Reference material: https://learn.microsoft.com/en-us/dotnet/core/docker/build-container
 
-Docker Desktop has to be installed and started on the Client Windows machine. The relevant Docker image for Windows has to pulled - proposal in this case is to use **windows/servercore** Docker image. Administrator accounts should be created, Dockerfile configured for Windows Service deployment, and the two containers should be initialized by the Ansible Playbook/ad-hoc command list.
+Docker Desktop has to be installed and started on the Client Windows machine. The relevant Docker image for Windows has to pulled - proposal in this case is to use **windows/servercore** Docker image. Administrator accounts should be created, Dockerfile configured for Windows Service deployment, and the two containers should be initialized by the Ansible Playbook/ad-hoc command list. Sample Dockerfile:
+
+```
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+COPY ["WindowsService/bin/Release/", "/Service/"]
+
+WORKDIR "C:/Service/"
+
+RUN New-Service -Name "SampleWindowsService" -BinaryPathName SampleWindowsService.exe; \
+    Set-Service -Name "\"SampleWindowsService\"" -StartupType Automatic; \
+    Set-ItemProperty "\"Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SampleWindowsService\"" -Name AllowRemoteConnection -Value 1
+    sc config SampleWindowsService obj= DOMAIN\User password= password
+
+ENTRYPOINT ["powershell"]
+CMD Start-Service \""MyWindowsServiceName\""
+```
 
 ## Final Overview
 
