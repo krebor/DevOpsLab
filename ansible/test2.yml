@@ -1,17 +1,25 @@
 ---
 
-- name: Run Playbook
+- name: Pre-run
+
+  hosts: 192.168.178.47
+  ignore_errors: true
+  gather_facts: no
+  
+  tasks:
+  - name: Fetch file from host to pod
+  
+    ansible.builtin.fetch:
+        src: /home/krebor/Ansible/dotnetapp/target_directory.zip
+        dest: /tmp/target_directory.zip
+        
+- name: Run playbook
+  
   hosts: 192.168.178.45
   ignore_errors: true
   gather_facts: no
 
   tasks:
-  
-  - name: Fetch file from host to pod
-    hosts: 192.168.178.47
-    ansible.builtin.fetch:
-        src: /home/krebor/Ansible/dotnetapp/target_directory.zip
-        dest: /tmp/target_directory.zip
         
   - name: Stop service1
     win_service:
