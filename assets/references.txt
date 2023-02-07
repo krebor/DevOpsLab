@@ -1,3 +1,4 @@
 https://github.com/ansible/awx/issues/12518 - exposing host filesystem to awx container
 https://computingforgeeks.com/how-to-install-ansible-awx-on-ubuntu-linux/ - awx install process using k3s
 https://www.ansible.com/blog/connecting-to-a-windows-host - setting up WinRM for Ansible
+https://www.reddit.com/r/awx/comments/ut3usv/importing_custom_modules_into_ansible_awx/ - importing custom Ansible modules in awx
