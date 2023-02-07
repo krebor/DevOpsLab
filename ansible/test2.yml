@@ -1,7 +1,6 @@
 ---
 
 - name: Run Playbook
-  hosts: win
   ignore_errors: true
 
   tasks:
