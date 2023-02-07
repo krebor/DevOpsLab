@@ -1,2 +1,2 @@
 collections:
-- name: ansible.windows.win_package
+- name: ansible.windows
