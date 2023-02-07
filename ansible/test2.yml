@@ -1,6 +1,7 @@
 ---
 
 - name: Run Playbook
+  hosts: 192.168.178.45
   ignore_errors: true
 
   tasks:
