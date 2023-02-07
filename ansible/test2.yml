@@ -3,9 +3,16 @@
 - name: Run Playbook
   hosts: 192.168.178.45
   ignore_errors: true
+  gather_facts: no
 
   tasks:
-
+  
+  - name: Fetch file from host to pod
+    hosts: 192.168.178.47
+    ansible.builtin.fetch:
+        src: /home/krebor/Ansible/dotnetapp/target_directory.zip
+        dest: /tmp/target_directory.zip
+        
   - name: Stop service1
     win_service:
       name: Mono-Sample-Windows-Service1
@@ -28,7 +35,7 @@
 
   - name: Copy a single file to Windows host
     ansible.windows.win_copy:
-      src: /home/krebor/Ansible/dotnetapp/target_directory.zip
+      src: /tmp/target_directory.zip
       dest: C:\SampleService\
 
   - name: Unzip file
