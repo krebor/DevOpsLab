@@ -8,7 +8,7 @@
 
   - [TeamCity](https://github.com/krebor/DevOpsLab/#teamcity) <br />
   - [Ansible](https://github.com/krebor/DevOpsLab/#ansible) <br />
-  - [Docker](https://github.com/krebor/DevOpsLab/#docker) <br />
+  - [AWX](https://github.com/krebor/DevOpsLab/#awx) <br />
 
 [Final Overview](https://github.com/krebor/DevOpsLab/#final-overview) <br />
 
@@ -37,7 +37,7 @@ https://github.com/MonoSoftware/sample-windows-service
 <img src="/assets/devops_topology.png" width="300">
 
 VM01 - Teamcity <br />
-VM02 - Ansible <br />
+VM02 - Ansible/AWX <br />
 VM03 - Client <br />
 
 ## Configuration
@@ -97,11 +97,22 @@ Last piece of configuration which we need to perform on the TeamCity server is t
 
 ### Ansible
 
-Now that we have the build artifacts, we need to create an Ansible Playbook which will perform the transfer of the archive to the Client machine, unarchiving of the file and running relevant Docker commands on the Client machine (`docker build`, `docker run`), which will leverage a pre-configured Dockerfile The required configuration can be created and tested on the Ansible Linux machine, then implemented within TeamCity SSH Exec build step.
+Now that we have the build artifacts, we need to create an Ansible Playbook which will perform the transfer of the archive to the Client machine, unarchiving of the file and running relevant Windows command line commands which will sanitize the transfer folder and deploy the services under two separate Windows accounts.
 
 We can start our configuration by installing Ansible - this can be done by using the `pip` Python package installer, or your Linux distribution's native package manager. Recommended way is using `pip`, since this method will provide the latest packages.
 
-After installing Ansible, it's time to configure our Inventory file - here we will define all client machines which Ansible will administer. Make sure to create the file within the same directory where your Playbooks and configuration files will be stored. The syntax of the file is simple, which is a list of IP addresses and/or hostnames of the machines you wish to be managed by Ansible.
+After installing Ansible, it's time to configure our Inventory file - here we will define all client machines which Ansible will administer. Make sure to create the file within the same directory where your Playbooks and configuration files will be stored. The syntax of the file is simple, which is a list of IP addresses and/or hostnames of the machines you wish to be managed by Ansible, alongside any relevant global config. Example:
+
+```
+[win]
+192.168.178.45
+
+[win:vars]
+ansible_user=Kreso
+ansible_password=Password123
+ansible_connection=winrm
+ansible_winrm_server_cert_validation=ignore
+```
 
 Next it's time to create an Ansible configuration file. Here we will define global Ansible settings which will enable us to shorten our Ansible commands and make overall quality of life improvements. Name the file **Ansible.cfg** and populate it as needed. Example:
 
@@ -118,61 +129,544 @@ Finally, we have to configure a Playbook, which is a YAML file containing the ne
 ```
 ---
 
-- hosts: all
-  become: true
+- name: Run Playbook
+  hosts: win
+  ignore_errors: true
+
   tasks:
+
+  - name: Stop service1
+    win_service:
+      name: Mono-Sample-Windows-Service1
+      state: stopped
+
+  - name: Stop service2
+    win_service:
+      name: Mono-Sample-Windows-Service2
+      state: stopped
+
+  - name: Remove SampleService folder
+    ansible.windows.win_file:
+     path: C:\SampleService\
+     state: absent
+
+  - name: Create SampleService folder
+    ansible.windows.win_file:
+     path: C:\SampleService
+     state: directory
+
+  - name: Copy a single file to Windows host
+    ansible.windows.win_copy:
+      src: /root/Ansible/dotnetapp/target_directory.zip
+      dest: C:\SampleService\
+
+  - name: Unzip file
+    community.windows.win_unzip:
+      src: C:\SampleService\target_directory.zip
+      dest: C:\SampleService
+
+  - name: Rename file
+    win_command: 'cmd.exe /c rename "C:\SampleService\WindowsService" WindowsService1'
+
+  - name: Copy a single file
+    ansible.windows.win_copy:
+      remote_src: true
+      src: C:\SampleService\WindowsService1
+      dest: C:\SampleService\WindowsService2
+
+  - name: Remove archive
+    ansible.windows.win_file:
+     path: C:\SampleService\target_directory.zip
+     state: absent
+
+  - name: Remove service1
+    win_service:
+      name: Mono-Sample-Windows-Service1
+      state: absent
+
+  - name: Create Service1
+    ansible.windows.win_service:
+     name: Mono-Sample-Windows-Service1
+     path: C:\SampleService\WindowsService1\bin\Debug\SampleWindowsService.exe
+     display_name: Mono-Sample-Windows-Service1
+
+  - name: Set user for Service1
+    ansible.windows.win_service:
+      name: Mono-Sample-Windows-Service1
+      state: restarted
+      username: .\sampleservice1
+      password: Password123
+
+  - name: Remove service2
+    win_service:
+      name: Mono-Sample-Windows-Service2
+      state: absent
+
+  - name: Create Service2
+    ansible.windows.win_service:
+     name: Mono-Sample-Windows-Service2
+     path: C:\SampleService\WindowsService1\bin\Debug\SampleWindowsService.exe
+     display_name: Mono-Sample-Windows-Service2
+
+  - name: Set user for Service2
+    ansible.windows.win_service:
+      name: Mono-Sample-Windows-Service2
+      state: restarted
+      username: .\sampleservice2
+      password: Password123
+```
+
+We can now apply the TeamCity SSH Exec deploy step which will run the Ansible command which will initiate the playbook. For example:
+
+`ansible-playbook -i inventory test.yaml`
+
+### AWX
+
+AWX provides a web-based user interface, REST API, and task engine built on top of Ansible. It is one of the upstream projects for Red Hat Ansible Automation Platform. Integrating AWX in our CI/CD process will enable us to achieve better visibility of project health, help us to manage secrets more efficiently and provide more streamlined control over inventory/job configuration.
+
+Latest versions of AWX are distributed in a way which requires configuration of several containers/pods, and Kubernetes-like tools like **k3s** will help us to complete this installation. We will use Ubuntu 22.04 LTS for deploying AWX.
+
+#### Installation
+
+**Step 1: Update Ubuntu system**
+
+```
+sudo apt update && sudo apt -y upgrade
+[ -f /var/run/reboot-required ] && sudo reboot -f
+```
+
+**Step 2: Install Single Node k3s Kubernetes**
+
+We will deploy a single node kubernetes using k3s lightweight tool. K3s is a certified Kubernetes distribution designed for production workloads in unattended, resource-constrained environments. The good thing with k3s is that you can add more Worker nodes at later stage if need arises.
+
+K3s provides an installation script that is a convenient way to install it as a service on systemd or openrc based systems
+Let’s run the following command to install K3s on our Ubuntu system:
+
+```
+curl -sfL https://get.k3s.io | sudo bash -
+sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+```
+Validate K3s installation:
+
+The next step is to validate our installation of K3s using kubectl command which was installed and configured by installer script.
+
+```
+$ kubectl get nodes
+
+NAME    STATUS   ROLES                  AGE   VERSION
+jammy   Ready    control-plane,master   58s   v1.25.6+k3s1
+```
+You can also confirm Kubernetes version deployed using the following command:
+
+```
+$ kubectl version --short
+Client Version: v1.25.6+k3s1
+Kustomize Version: v4.5.7
+Server Version: v1.25.6+k3s1
+```
+
+The K3s service will be configured to automatically restart after node reboots or if the process crashes or is killed.
+
+**Step 3: Deploy AWX Operator on Kubernetes**
+
+This Kubernetes Operator has to be deployed in your Kubernetes cluster, which in our case is powered by K3s. The operator we’ll deploy can manage one or more AWX instances in any namespace.
+Install git and make tools:
+
+```
+sudo apt update
+sudo apt install git build-essential -y
+```
+
+Clone operator deployment code:
+
+```
+$ git clone https://github.com/ansible/awx-operator.git
+Cloning into 'awx-operator'...
+remote: Enumerating objects: 6306, done.
+remote: Counting objects: 100% (315/315), done.
+remote: Compressing objects: 100% (189/189), done.
+remote: Total 6306 (delta 160), reused 236 (delta 115), pack-reused 5991
+Receiving objects: 100% (6306/6306), 1.54 MiB | 19.74 MiB/s, done.
+Resolving deltas: 100% (3598/3598), done.
+```
+
+Create namespace where operator will be deployed. I’ll name mine awx:
+```
+export NAMESPACE=awx
+kubectl create ns ${NAMESPACE}
+```
+
+Set current context to value set in NAMESPACE variable:
+
+```
+# kubectl config set-context --current --namespace=$NAMESPACE 
+Context "default" modified.
+```
+Switch to awx-operator directory:
+```
+cd awx-operator/
+```
+Save the latest version from AWX Operator releases as RELEASE_TAG variable then checkout to the branch using git.
+```
+sudo apt install curl jq -y
+RELEASE_TAG=`curl -s https://api.github.com/repos/ansible/awx-operator/releases/latest | grep tag_name | cut -d '"' -f 4`
+echo $RELEASE_TAG
+git checkout $RELEASE_TAG
+```
+Deploy AWX Operator into your cluster:
+```
+export NAMESPACE=awx
+make deploy
+```
+
+Wait a few minutes and awx-operator should be running:
+```
+# kubectl get pods
+NAME                                               READY   STATUS    RESTARTS   AGE
+awx-operator-controller-manager-68d787cfbd-z75n4   2/2     Running   0          40s
+```
+
+How To Uninstall AWX Operator (Don’t run this unless you’re sure it uninstalls!“
+
+You can always remove the operator and all associated CRDs by running the command below:
+
+```
+# export NAMESPACE=awx
+# make undeploy
+/root/awx-operator/bin/kustomize build config/default | kubectl delete -f -
+namespace "awx" deleted
+customresourcedefinition.apiextensions.k8s.io "awxbackups.awx.ansible.com" deleted
+customresourcedefinition.apiextensions.k8s.io "awxrestores.awx.ansible.com" deleted
+customresourcedefinition.apiextensions.k8s.io "awxs.awx.ansible.com" deleted
+serviceaccount "awx-operator-controller-manager" deleted
+role.rbac.authorization.k8s.io "awx-operator-leader-election-role" deleted
+role.rbac.authorization.k8s.io "awx-operator-manager-role" deleted
+clusterrole.rbac.authorization.k8s.io "awx-operator-metrics-reader" deleted
+clusterrole.rbac.authorization.k8s.io "awx-operator-proxy-role" deleted
+rolebinding.rbac.authorization.k8s.io "awx-operator-leader-election-rolebinding" deleted
+rolebinding.rbac.authorization.k8s.io "awx-operator-manager-rolebinding" deleted
+clusterrolebinding.rbac.authorization.k8s.io "awx-operator-proxy-rolebinding" deleted
+configmap "awx-operator-manager-config" deleted
+service "awx-operator-controller-manager-metrics-service" deleted
+deployment.apps "awx-operator-controller-manager" deleted
+```
+
+**Step 4: Install Ansible AWX on Ubuntu using Operator**
+
+Create Static data PVC – Ref AWX data persistence:
+```
+cat <<EOF | kubectl create -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static-data-pvc
+  namespace: awx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+EOF
+```
+PVC won’t be bound until the pod that uses it is created.
+```
+# kubectl get pvc -n awx
+NAME                     STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+static-data-pvc          Pending                                      local-path     43s
+```
+Let’s now create AWX deployment file with basic information about what is installed:
+
+**vim awx-deploy.yml**
+
+Paste below contents into the file:
+```
+---
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx
+spec:
+  service_type: nodeport
+  projects_persistence: true
+  projects_storage_access_mode: ReadWriteOnce
+  web_extra_volume_mounts: |
+    - name: static-data
+      mountPath: /var/lib/projects
+  extra_volumes: |
+    - name: static-data
+      persistentVolumeClaim:
+        claimName: static-data-pvc
+```
+We have defined resource name as awx and service type as nodeport to enable us access AWX from the Node IP address and given port. We also added extra PV mount on the web server pod.
+
+Apply configuration manifest file:
+```
+$ kubectl apply -f awx-deploy.yml
+awx.awx.ansible.com/awx created
+```
+Wait a few minutes then check AWX instance deployed:
+```
+$ watch kubectl get pods -l "app.kubernetes.io/managed-by=awx-operator"
+NAME                   READY   STATUS    RESTARTS   AGE
+awx-postgres-0         1/1     Running   0          75s
+awx-7c5d846c88-mjlvm   4/4     Running   0          64s
+```
+You can track the installation process at the operator pod logs:
+```
+kubectl logs -f deployments/awx-operator-controller-manager -c awx-manager
+```
+
+Data Persistence
+
+The database data will be persistent as they are stored in a persistent volume:
+```
+$ kubectl get pvc
+NAME                      STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+postgres-awx-postgres-0   Bound    pvc-c0149545-8631-4aa1-a03f-2134a7f42aa6   8Gi        RWO            local-path     84s
+static-data-pvc           Bound    pvc-6b6005de-0888-4634-b0a2-d5cc92eb85cc   1Gi        RWO            local-path     2m10s
+awx-projects-claim        Bound    pvc-91e751e9-0e8e-40c8-9953-f8d9db5f612b   8Gi        RWO            local-path     77s
+```
+Volumes are created using local-path-provisioner and host path
+```
+$ ls /var/lib/rancher/k3s/storage/
+pvc-edb29795-7dae-4a00-805f-2d989694fe3d_default_postgres-awx-postgres-0
+```
+Checking AWX Container’s logs
+The awx-xxx-yyy pod will have four containers, namely:
+
+redis
+awx-web
+awx-task
+awx-ee
+As can be seen from below command output:
+```
+# kubectl -n awx  logs deploy/awx
+error: a container name must be specified for pod awx-75698588d6-r7bxl, choose one of: [redis awx-web awx-task awx-ee]
+```
+You’ll need to provide container name after the pod:
+
+`kubectl -n awx  logs deploy/awx -c redis`
+`kubectl -n awx  logs deploy/awx -c awx-web`
+`kubectl -n awx  logs deploy/awx -c awx-task`
+`kubectl -n awx  logs deploy/awx -c awx-ee`
+
+Access AWX Container’s Shell
+
+Here is how to access each container’s shell:
+
+`kubectl exec -ti deploy/awx  -c  awx-task -- /bin/bash`
+`kubectl exec -ti deploy/awx  -c  awx-web -- /bin/bash`
+`kubectl exec -ti deploy/awx  -c  awx-ee -- /bin/bash`
+`kubectl exec -ti deploy/awx  -c  redis -- /bin/bash`
+
+
+**Step 5: Access Ansible AWX Dashboard**
+
+List all available services and check awx-service Nodeport
+```
+$ kubectl get svc -l "app.kubernetes.io/managed-by=awx-operator"
+NAME              TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+awx-postgres-13   ClusterIP   None            <none>        5432/TCP       153m
+awx-service       NodePort    10.43.179.217   <none>        80:30080/TCP   152m
+```
+We can see the service type is set to NodePort. To access our service from outside Kubernetes cluster using k3s node IP address and give node port
+
+http://hostip_or_hostname:30080
+You can edit the Node Port and set to figure of your preference, but it has to be in the range of 30000-32768
+
+On accessing AWX web portal you are presented with the welcome dashboard similar to one below.
+
+<img src="/assets/awx_welcomescreen.png" width="500">
+
+Obtain admin user password by decoding the secret with the password value:
+
+`kubectl get secret awx-admin-password -o jsonpath="{.data.password}" | base64 --decode`
+
+Better output format:
+
+`kubectl get secret awx-admin-password -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}'`
+
+#### Deployment
+
+Having installed AWX, we can now configure our project and job template.
+
+First log in to the AWX web UI if you did not already do so and open **Inventories**. Here, we will create a new inventory add two hosts - TeamCity and Client:
+
+<img src="/assets/awx_hosts.png" width="500">
+
+Additional variables can be set at inventory level or single host level - in our case we configured login method and credential for our Windows client:
+
+<img src="/assets/awx_hostdetails.png" width="500">
+
+Next, we'll set up our credentials, so select **Credentials**. Here we will add two credentials - one for our AWX host machine and another for GitHub.
+
+AWX host machine:
+
+<img src="/assets/credential_awxhost.png" width="500">
+
+GitHub:
+
+<img src="/assets/credential_github.png" width="500">
+
+*Note: for the GitHub credential, make sure to select type "Source Control", then generate a new Personal Access Token (PAT) within GitHub Settings -> Developer Settings, and use this as the password.*
+
+Next configure a new project, similar to this example:
+
+<img src="/assets/credential_github.png" width="500">
+
+Make sure to **Sync** the project, in order to check if a connection with your GitHub repository was successful.
+
+Now it's time to configure a new job template, which we will **Launch** to start our playbook. Here's a reference configuration:
+
+<img src="/assets/awx_jobtemplate.png" width="500">
+
+And here's the YAML file which will be our playbook:
+
+```
+---
+
+- name: Pre-run
+
+  hosts: 192.168.178.47
+  ignore_errors: true
+  gather_facts: no
   
-  - name: transfer file
-    copy:
-      src: /home/krebor/ansible_tutorial/archive.tar
-      dest: /root/sample_folder
+  tasks:
+  - name: Fetch file from host to pod
+  
+    ansible.builtin.fetch:
+        src: /home/krebor/Ansible/dotnetapp/target_directory.zip
+        dest: /tmp/target_directory.zip
+        flat: yes
+        
+- name: Run playbook
+  
+  hosts: 192.168.178.45
+  ignore_errors: true
+  gather_facts: no
 
-  - name: unarchive file
-    unarchive:
-      src: /home/krebor/ansible_tutorial/archive.tar
-      dest: /root/sample_folder
-      
-  - name: build image
-    community.docker.docker_image:
-      build:
-        path: ./WindowsService
-      name: windows_service
-      source: build
-      
-  - name: run container
-        docker_container:
-          name: windows_service_container
-          image: windows_service:latest
-          state: started
-          recreate: yes
-          detach: true
-          ports:
-            - "8888:8080"
+  tasks:
+        
+  - name: Stop service1
+    win_service:
+      name: Mono-Sample-Windows-Service1
+      state: stopped
+
+  - name: Stop service2
+    win_service:
+      name: Mono-Sample-Windows-Service2
+      state: stopped
+
+  - name: Remove SampleService folder
+    ansible.windows.win_file:
+     path: C:\SampleService\
+     state: absent
+
+  - name: Create SampleService folder
+    ansible.windows.win_file:
+     path: C:\SampleService
+     state: directory
+
+  - name: Copy a single file to Windows host
+    ansible.windows.win_copy:
+      src: /tmp/target_directory.zip
+      dest: C:\SampleService\
+
+  - name: Unzip file
+    community.windows.win_unzip:
+      src: C:\SampleService\target_directory.zip
+      dest: C:\SampleService
+
+  - name: Rename file
+    win_command: 'cmd.exe /c rename "C:\SampleService\WindowsService" WindowsService1'
+
+  - name: Copy a single file
+    ansible.windows.win_copy:
+      remote_src: true
+      src: C:\SampleService\WindowsService1
+      dest: C:\SampleService\WindowsService2
+
+  - name: Remove archive
+    ansible.windows.win_file:
+     path: C:\SampleService\target_directory.zip
+     state: absent
+
+  - name: Remove service1
+    win_service:
+      name: Mono-Sample-Windows-Service1
+      state: absent
+
+  - name: Create Service1
+    ansible.windows.win_service:
+     name: Mono-Sample-Windows-Service1
+     path: C:\SampleService\WindowsService1\bin\Debug\SampleWindowsService.exe
+     display_name: Mono-Sample-Windows-Service1
+
+  - name: Set user for Service1
+    ansible.windows.win_service:
+      name: Mono-Sample-Windows-Service1
+      state: restarted
+      username: .\sampleservice1
+      password: Password123
+
+  - name: Remove service2
+    win_service:
+      name: Mono-Sample-Windows-Service2
+      state: absent
+
+  - name: Create Service2
+    ansible.windows.win_service:
+     name: Mono-Sample-Windows-Service2
+     path: C:\SampleService\WindowsService1\bin\Debug\SampleWindowsService.exe
+     display_name: Mono-Sample-Windows-Service2
+
+  - name: Set user for Service2
+    ansible.windows.win_service:
+      name: Mono-Sample-Windows-Service2
+      state: restarted
+      username: .\sampleservice2
+      password: Password123
 ```
-### Docker
 
-Reference material: https://learn.microsoft.com/en-us/dotnet/core/docker/build-container
-
-Docker Desktop has to be installed and started on the Client Windows machine. The relevant Docker image for Windows has to pulled - proposal in this case is to use **windows/servercore** Docker image. Administrator accounts should be created, Dockerfile configured for Windows Service deployment, and the two containers should be initialized by the Ansible Playbook/ad-hoc command list. Sample Dockerfile:
+We now have some additional configuration we need to take care of before we are able to run the job template. First will be exposing the local filesystem directory of host machine (which is hosting AWX) to the awx-ee pod, so that files which are pushed from TeamCity can become available to the pod. We can do so by going to **Settings** within AWX web UI and under job settings populate **Paths to expose to isolated jobs**. Here's an example config:
 
 ```
-FROM mcr.microsoft.com/windows/servercore:ltsc2022
-
-SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
-
-COPY ["WindowsService/bin/Release/", "/Service/"]
-
-WORKDIR "C:/Service/"
-
-RUN New-Service -Name "SampleWindowsService" -BinaryPathName SampleWindowsService.exe; \
-    Set-Service -Name "\"SampleWindowsService\"" -StartupType Automatic; \
-    Set-ItemProperty "\"Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SampleWindowsService\"" -Name AllowRemoteConnection -Value 1
-    sc config SampleWindowsService obj= DOMAIN\User password= password
-
-ENTRYPOINT ["powershell"]
-CMD Start-Service \""MyWindowsServiceName\""
+[
+  "/etc/pki/ca-trust:/etc/pki/ca-trust:O",
+  "/home/krebor/Ansible/dotnetapp/:/tmp:rw",
+  "/usr/share/pki:/usr/share/pki:O"
+]
 ```
+
+We also have to make sure that relevant additional Ansible modules can be installed/provisioned within the pod and we can do so by creating a requirements.yml file under collections within our linked GitHub repository. Sample config:
+
+```
+collections:
+- name: ansible.windows
+- name: community.windows
+```
+
+We can now run the job template successfully:
+
+<img src="/assets/awx_successfuljob.png" width="500">
+
+Lastly, we need to reconfigure TeamCity Deploy steps (SSH Upload and SSH Exec) to reflect our new setup. Update the hostname to the hostname or IP address of AWX host machine, update the credentials and for SSH Exec input a command which will run a tower-cli (which you may also need to install beforehand) and subsequently the AWX job template. Sample command:
+
+`sudo tower-cli job launch -J "sample-job" --monitor -f human`
+
+And that should be it, you should now be able to successfully triger a build from TeamCity, which will push the build artifacts to the Ansible host machine, which will in turn use AWX to deploy the artifacts to the Windows client, as specified by the playbook.
+
+References:
+https://computingforgeeks.com/how-to-install-ansible-awx-on-ubuntu-linux/ - awx install process using k3s
+https://www.ansible.com/blog/connecting-to-a-windows-host - setting up WinRM for Ansible
+https://www.reddit.com/r/awx/comments/ut3usv/importing_custom_modules_into_ansible_awx/ - importing custom Ansible modules in awx
+https://www.reddit.com/r/ansible/comments/zaiahe/using_fetch_module_to_copy_remote_files_to_local/ - issues with fetch
+
+
+
 
 ## Final Overview
 
-What did we achieve in creating this lab? In short, we enabled an automatic build and deployment of newly commited source code, and even if we did not directly implement any tests, we saw how this could also be implemented as one of the build configurations within TeamCity. We leveraged our knowledge of virtualization and explored new concepts like TeamCity Server configuration and build/deploy process, Ansible configuration automation and Docker containerization. Hopefully this was a valuable experience to spark further study and self-development.
+What did we achieve in creating this lab? In short, we enabled an automatic build and deployment of newly commited source code, and even if we did not directly implement any tests, we saw how this could also be implemented as one of the build configurations within TeamCity. We leveraged our knowledge of virtualization and explored new concepts like TeamCity Server configuration and build/deploy process, Ansible/AWX configuration automation and containerization. Hopefully this was a valuable experience to spark further study and self-development.

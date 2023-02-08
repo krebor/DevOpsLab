@@ -1,0 +1,87 @@
+---
+
+- name: Run Playbook
+  hosts: win
+  ignore_errors: true
+
+  tasks:
+
+  - name: Stop service1
+    win_service:
+      name: Mono-Sample-Windows-Service1
+      state: stopped
+
+  - name: Stop service2
+    win_service:
+      name: Mono-Sample-Windows-Service2
+      state: stopped
+
+  - name: Remove SampleService folder
+    ansible.windows.win_file:
+     path: C:\SampleService\
+     state: absent
+
+  - name: Create SampleService folder
+    ansible.windows.win_file:
+     path: C:\SampleService
+     state: directory
+
+  - name: Copy a single file to Windows host
+    ansible.windows.win_copy:
+      src: /root/Ansible/dotnetapp/target_directory.zip
+      dest: C:\SampleService\
+
+  - name: Unzip file
+    community.windows.win_unzip:
+      src: C:\SampleService\target_directory.zip
+      dest: C:\SampleService
+
+  - name: Rename file
+    win_command: 'cmd.exe /c rename "C:\SampleService\WindowsService" WindowsService1'
+
+  - name: Copy a single file
+    ansible.windows.win_copy:
+      remote_src: true
+      src: C:\SampleService\WindowsService1
+      dest: C:\SampleService\WindowsService2
+
+  - name: Remove archive
+    ansible.windows.win_file:
+     path: C:\SampleService\target_directory.zip
+     state: absent
+
+  - name: Remove service1
+    win_service:
+      name: Mono-Sample-Windows-Service1
+      state: absent
+
+  - name: Create Service1
+    ansible.windows.win_service:
+     name: Mono-Sample-Windows-Service1
+     path: C:\SampleService\WindowsService1\bin\Debug\SampleWindowsService.exe
+     display_name: Mono-Sample-Windows-Service1
+
+  - name: Set user for Service1
+    ansible.windows.win_service:
+      name: Mono-Sample-Windows-Service1
+      state: restarted
+      username: .\sampleservice1
+      password: Password123
+
+  - name: Remove service2
+    win_service:
+      name: Mono-Sample-Windows-Service2
+      state: absent
+
+  - name: Create Service2
+    ansible.windows.win_service:
+     name: Mono-Sample-Windows-Service2
+     path: C:\SampleService\WindowsService1\bin\Debug\SampleWindowsService.exe
+     display_name: Mono-Sample-Windows-Service2
+
+  - name: Set user for Service2
+    ansible.windows.win_service:
+      name: Mono-Sample-Windows-Service2
+      state: restarted
+      username: .\sampleservice2
+      password: Password123
