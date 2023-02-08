@@ -2,3 +2,4 @@ https://github.com/ansible/awx/issues/12518 - exposing host filesystem to awx co
 https://computingforgeeks.com/how-to-install-ansible-awx-on-ubuntu-linux/ - awx install process using k3s
 https://www.ansible.com/blog/connecting-to-a-windows-host - setting up WinRM for Ansible
 https://www.reddit.com/r/awx/comments/ut3usv/importing_custom_modules_into_ansible_awx/ - importing custom Ansible modules in awx
+https://www.reddit.com/r/ansible/comments/zaiahe/using_fetch_module_to_copy_remote_files_to_local/ - issues with fetch

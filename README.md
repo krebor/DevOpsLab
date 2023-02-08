@@ -34,7 +34,7 @@ https://github.com/MonoSoftware/sample-windows-service
 
 ## Topology
 
-<img src="/assets/devopslab_topology.png" width="300">
+<img src="/assets/devops_topology.png" width="300">
 
 VM01 - Teamcity <br />
 VM02 - Ansible <br />
