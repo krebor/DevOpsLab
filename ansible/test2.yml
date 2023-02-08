@@ -12,6 +12,7 @@
     ansible.builtin.fetch:
         src: /home/krebor/Ansible/dotnetapp/target_directory.zip
         dest: /tmp/target_directory.zip
+        flat: yes
         
 - name: Run playbook
   
