@@ -1,0 +1,13 @@
+---
+
+- name: Run Playbook
+  hosts: 192.168.178.45
+  ignore_errors: true
+  gather_facts: no
+
+  tasks:
+
+  - name: Copy a single file to Windows host
+    ansible.windows.win_copy:
+      src: /home/krebor/Ansible/dotnetapp/target_directory.zip
+      dest: C:\SampleService\
