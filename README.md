@@ -659,9 +659,13 @@ Lastly, we need to reconfigure TeamCity Deploy steps (SSH Upload and SSH Exec) t
 And that should be it, you should now be able to successfully triger a build from TeamCity, which will push the build artifacts to the Ansible host machine, which will in turn use AWX to deploy the artifacts to the Windows client, as specified by the playbook.
 
 References:
+
 https://computingforgeeks.com/how-to-install-ansible-awx-on-ubuntu-linux/ - awx install process using k3s
+
 https://www.ansible.com/blog/connecting-to-a-windows-host - setting up WinRM for Ansible
+
 https://www.reddit.com/r/awx/comments/ut3usv/importing_custom_modules_into_ansible_awx/ - importing custom Ansible modules in awx
+
 https://www.reddit.com/r/ansible/comments/zaiahe/using_fetch_module_to_copy_remote_files_to_local/ - issues with fetch
 
 
