@@ -91,8 +91,6 @@ Finally, let's check our destination server (Ansible):
 
 Great news, the artifacts archive was successfully transfered to the Ansible server and is ready to be further processed/deployed!
 
-**-- NEXT ENTRIES ARE WORK IN PROGRESS AND DO NOT OFFER A COMPLETE SOLUTION --**
-
 Last piece of configuration which we need to perform on the TeamCity server is to configure an SSH Exec build step in our **Deploy** build configuration, which will execute the required bash script and/or Ansible commands, which will enable further deployment to the Client machine.
 
 ### Ansible
